@@ -1,0 +1,38 @@
+# hope.yaml
+
+path: hope-yolo  # root directory for images and labels
+
+train: images/train  # training images
+val: images/val      # validation images
+
+nc: 28  # number of classes
+
+names:
+  - AlphabetSoup
+  - BBQSauce
+  - Butter
+  - Cherries
+  - ChocolatePudding
+  - Cookies
+  - Corn
+  - CreamCheese
+  - GranolaBars
+  - GreenBeans
+  - Ketchup
+  - MacaroniAndCheese
+  - Mayo
+  - Milk
+  - Mushrooms
+  - Mustard
+  - OrangeJuice
+  - Parmesan
+  - Peaches
+  - PeasAndCarrots
+  - Pineapple
+  - Popcorn
+  - Raisins
+  - SaladDressing
+  - Spaghetti
+  - TomatoSauce
+  - Tuna
+  - Yogurt
