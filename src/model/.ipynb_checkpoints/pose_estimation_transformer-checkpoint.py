@@ -70,7 +70,7 @@ class pose_estimation(nn.Module):
             self.t_dim = 3
             self.rot_dim = 6
             self.translation_head = feed_fwd_nn(hidden_dim, hidden_dim, self.t_dim * self.n_classes, self.n_nn_layer)
-            self.rotation_head = MLP(hidden_dim, hidden_dim, self.rot_dim * self.n_classes, self.n_nn_layer)
+            self.rotation_head = feed_fwd_nn(hidden_dim, hidden_dim, self.rot_dim * self.n_classes, self.n_nn_layer)
         elif self.loss == 'pose':
             self.pose_dim = 9
             self.pose_head = feed_fwd_nn(hidden_dim, hidden_dim, self.pose_dim * self.n_classes, self.n_nn_layer)
@@ -78,6 +78,43 @@ class pose_estimation(nn.Module):
         else:
             print(self.loss,' not implemented')
 
+        input_proj_list = []
+        
+        if num_feature_levels > 1:
+            # Use multi-scale features as input to the transformer
+            num_backbone_out = len(backbone.strides)
+            
+            # If multi-scale then every intermediate backbone feature map is returned
+            for n in range(num_backbone_out):
+                in_channels = backbone.num_channels[n]
+                input_proj_list.append(nn.Sequential(
+                    nn.Conv2d(in_channels, self.hidden_dim, kernel_size=1),
+                    nn.GroupNorm(32, self.hidden_dim),
+                ))
+                
+            # If more feature levels are required than backbone feature maps are available then the last feature map is
+            # passed through an additional 3x3 Conv layer to create a new feature map.
+            # This new feature map is then used as the baseline for the next feature map to calculate
+            
+            for n in range(num_feature_levels - num_backbone_outs):
+                input_proj_list.append(nn.Sequential(
+                    nn.Conv2d(in_channels, self.hidden_dim, kernel_size=3, stride=2, padding=1),
+                    nn.GroupNorm(32, self.hidden_dim),
+                ))
+                in_channels = hidden_dim
+            
+        else:
+            #backbone's last feature embedding map.
+            input_proj_list.append(nn.Sequential(
+                    nn.Conv2d(backbone.num_channels[0], self.hidden_dim, kernel_size=1),
+                    nn.GroupNorm(32, self.hidden_dim),
+                ))
+        self.input_proj = nn.ModuleList(input_proj_list)
+
+        for proj in self.input_proj:
+            nn.init.xavier_uniform_(proj[0].weight, gain=1)
+        
+        self.bbox_embedding = BoundingBoxEmbeddingSine(num_pos_feats=self.hidden_dim / 8)
         
         def forward(self,
     
