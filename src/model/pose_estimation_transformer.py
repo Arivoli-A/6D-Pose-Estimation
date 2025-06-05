@@ -10,8 +10,10 @@ from utils.misc import NestedTensor, nested_tensor_from_tensor_list
 # from .backbone import build_backbone
 from utils.matcher import HungarianMatcher
 from .deformable_transformer import DeformableTransformer, create_layer
-from .position_encoding import BoundingBoxEmbeddingSine
+from .position_encoding import BoundingBoxEncodingSine
 import copy
+
+GROUP_NORM = 32
 
 class feed_fwd_nn(nn.Module): # Feed Forward NN for pose head
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
@@ -47,18 +49,20 @@ class feed_fwd_nn(nn.Module): # Feed Forward NN for pose head
         return self.network(x)
     
 class pose_estimation(nn.Module):
-    def __init__(self, backbone, transformer, num_queries, num_feature_levels, n_classes, bbox_mode='gt', loss = 'split', n_nn_layer = 3):
+    def __init__(self, backbone, transformer, num_queries, num_feature_levels, n_classes, backbone_type = 'output', bbox_mode='gt', loss = 'split', n_nn_layer = 3):
         # bbox_mode : 'gt', 'backbone', 'jitter'
         # loss : 'pose', 'rot' (6D) 
         # ref_point, query - given by backbone (no learned embedding)
         # output : Each output for each class ('specific')
         # No loss from each layer of FNN
+        # backbone_type = 'input', 'output', 'none'
 
         super().__init__()
         self.transformer = transformer
         hidden_dim = transformer.d_model
         self.hidden_dim = hidden_dim
         self.backbone = backbone
+        self.backbone_type = backbone_type
         self.n_queries = num_queries
         self.n_classes = n_classes + 1  # +1 for dummy/background class
         self.bbox_mode = bbox_mode
@@ -80,7 +84,8 @@ class pose_estimation(nn.Module):
 
         input_proj_list = []
         
-        if num_feature_levels > 1:
+        if num_feature_levels > 1: # For encoder input : for backbone_type : 'input', 'output', 'none'
+            
             # Use multi-scale features as input to the transformer
             num_backbone_out = len(backbone.strides)
             
@@ -89,35 +94,59 @@ class pose_estimation(nn.Module):
                 in_channels = backbone.num_channels[n]
                 input_proj_list.append(nn.Sequential(
                     nn.Conv2d(in_channels, self.hidden_dim, kernel_size=1),
-                    nn.GroupNorm(32, self.hidden_dim),
+                    nn.GroupNorm(GROUP_NORM, self.hidden_dim),
                 ))
                 
             # If more feature levels are required than backbone feature maps are available then the last feature map is
             # passed through an additional 3x3 Conv layer to create a new feature map.
             # This new feature map is then used as the baseline for the next feature map to calculate
             
-            for n in range(num_feature_levels - num_backbone_outs):
+            for n in range(num_feature_levels - num_backbone_out):  #num_feature_levels - num_backbone_out >=0
                 input_proj_list.append(nn.Sequential(
                     nn.Conv2d(in_channels, self.hidden_dim, kernel_size=3, stride=2, padding=1),
-                    nn.GroupNorm(32, self.hidden_dim),
+                    nn.GroupNorm(GROUP_NORM, self.hidden_dim),
                 ))
                 in_channels = hidden_dim
             
         else:
-            #backbone's last feature embedding map.
+            #backbone's last feature map.
             input_proj_list.append(nn.Sequential(
                     nn.Conv2d(backbone.num_channels[0], self.hidden_dim, kernel_size=1),
-                    nn.GroupNorm(32, self.hidden_dim),
+                    nn.GroupNorm(GROUP_NORM, self.hidden_dim),
                 ))
+            
         self.input_proj = nn.ModuleList(input_proj_list)
 
         for proj in self.input_proj:
             nn.init.xavier_uniform_(proj[0].weight, gain=1)
         
-        self.bbox_embedding = BoundingBoxEmbeddingSine(num_pos_feats=self.hidden_dim / 8)
+        self.bbox_encoding = BoundingBoxEncodingSine(num_pos_feats=self.hidden_dim / 8)
         
-        def forward(self,
-    
+        def forward(self, sample_data, target_data):
+            # if backbone_type is 'input' : samples:NestedTensor : object.tensors, object.mask
+            # if backbone_type is 'output' : samples:tuple : (features_list, pos_list, predictions_list)
+            # if backbone_type is 'none' : samples:ndarray : images
+
+            if self.backbone_type == 'input':
+                image_size_data = [[sample.shape[-2], sample.shape[-1]] for sample in sample_data.tensors]
+                features, pos, pred_objects = self.backbone(sample_data)
+            elif self.backbone_type == 'output':
+                features, pos, pred_objects = sample_data
+            
+            pred_box_data = []
+            pred_class_data = []
+            query_embed_data = []
+            n_boxes_per_sample_data = []
+
+            
+             
+                
+                
+                
+                
+            
+            
+        
         
         
         
