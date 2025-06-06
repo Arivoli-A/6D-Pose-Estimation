@@ -5,11 +5,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from utils import box_ops
 from utils.misc import NestedTensor, nested_tensor_from_tensor_list
 # from .backbone import build_backbone
 from utils.matcher import HungarianMatcher
-from .deformable_transformer import DeformableTransformer, create_layers
+from .deformable_transformer import create_layers
 from .position_encoding import PositionEncodingSine, BoundingBoxEncodingSine
 import copy
 
@@ -54,7 +53,7 @@ class feed_fwd_nn(nn.Module): # Feed Forward NN for pose head
     def forward(self, x):
         return self.network(x)
     
-class pose_estimation(nn.Module):
+class PoseEstimation(nn.Module):
     def __init__(self, backbone, transformer, num_queries, num_feature_levels, n_classes, backbone_type = BACKBONE_TYPE, bbox_mode = BBOX_MODE, loss = LOSS, n_nn_layer = NN_LAYER):
         # bbox_mode : 'gt', 'backbone', 'jitter'
         # loss : 'pose', 'rot' (6D) 

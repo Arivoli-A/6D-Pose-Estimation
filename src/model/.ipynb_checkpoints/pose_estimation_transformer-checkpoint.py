@@ -5,11 +5,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from utils import box_ops
 from utils.misc import NestedTensor, nested_tensor_from_tensor_list
 # from .backbone import build_backbone
 from utils.matcher import HungarianMatcher
-from .deformable_transformer import DeformableTransformer, create_layers
+from .deformable_transformer import create_layers
 from .position_encoding import PositionEncodingSine, BoundingBoxEncodingSine
 import copy
 
