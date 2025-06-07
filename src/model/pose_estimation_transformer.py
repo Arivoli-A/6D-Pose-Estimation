@@ -20,6 +20,14 @@ NN_LAYER = 3
 DTYPE = torch.float32
 DTYPE_INT = torch.int32
 
+def get_src_permutation_idx(indices):
+        # permute predictions following indices
+        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
+        src_idx = torch.cat([src for (src, _) in indices])
+        return batch_idx, src_idx
+
+######################################################################################
+
 class feed_fwd_nn(nn.Module): # Feed Forward NN for pose head
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
         super().__init__()
@@ -137,7 +145,7 @@ class PoseEstimation(nn.Module):
         
     def forward(self, sample_data, target_data = None):
         # if backbone_type is 'input' : sample_data:NestedTensor : object.tensors, object.mask
-        # if backbone_type is 'output' : sample_data:tuple : (features_list, pos_list, predictions_list)
+        # if backbone_type is 'output' : sample_data: {'features': features, 'prediction': pred_objects, 'img_mask' : img_mask}
         # if backbone_type is 'none' : sample_data:ndarray : images
 
         # target_data : dict
@@ -153,7 +161,7 @@ class PoseEstimation(nn.Module):
             image_size_data = [[sample.shape[-2], sample.shape[-1]] for sample in sample_data.tensors]
             features, pos, pred_objects = self.backbone(sample_data)
         elif self.backbone_type == 'output':
-            features, pos, pred_objects = sample_data 
+            features, pos, pred_objects = self.backbone(sample_data) 
             
         # features : Feature outputs from backbone
         # pos : Position Encoding of features    
@@ -446,7 +454,7 @@ class SetCriterion(nn.Module):
         outputs must contain the key 'pred_translation', while targets must contain the key 'relative_position'
         Position / Translation are expected in [x, y, z] meters
         """
-        idx = self._get_src_permutation_idx(indices)
+        idx = get_src_permutation_idx(indices)
         src_translation = outputs["pred_translation"][idx]
         tgt_translation = torch.cat([t['relative_position'][i] for t, (_, i) in zip(targets, indices)], dim=0)
         n_obj = len(tgt_translation)
@@ -466,7 +474,7 @@ class SetCriterion(nn.Module):
         Calculates the loss in radiant.
         """
         eps = 1e-6
-        idx = self._get_src_permutation_idx(indices)
+        idx = get_src_permutation_idx(indices)
         src_rot = outputs["pred_rotation"][idx]
         tgt_rot = torch.cat([t['relative_rotation'][i] for t, (_, i) in zip(targets, indices)], dim=0)
         n_obj = len(tgt_rot)
@@ -484,9 +492,9 @@ class SetCriterion(nn.Module):
         Compute the loss related to the pose matrix of pose estimation.
         outputs must contain the key 'pred_pose', while targets must contain the key 'inverse_pose'
         """
-        idx = self._get_src_permutation_idx(indices)
+        idx = get_src_permutation_idx(indices)
         src_pose = outputs["pred_pose"][idx]
-        inv_pose = torch.cat([t['inverse_pose'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        inv_pose = torch.cat([t['inverse_pose'][i] for t, (_, i) in zip(inverse, indices)], dim=0)
         n_obj = len(inv_pose)
     
         product = torch.bmm(src_pose, inv_pose)
@@ -499,11 +507,7 @@ class SetCriterion(nn.Module):
         losses["loss_pose"] = loss_pose.sum() / n_obj
         return losses
 
-    def _get_src_permutation_idx(self, indices):
-        # permute predictions following indices
-        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
-        src_idx = torch.cat([src for (src, _) in indices])
-        return batch_idx, src_idx
+    
     
     def get_loss(self, loss, outputs, targets, indices, **kwargs):
         loss_map = {

@@ -16,7 +16,7 @@ class PositionEncodingSine(nn.Module):
         self.temperature = temperature
         self.normalize = normalize
         if scale is not None and normalize is False:
-            raise ValueError("normalize should be True if scale is passed")
+            raise ValueError("normalize should be true if scale is passed")
         if scale is None:
             scale = 2 * math.pi
         self.scale = scale
