@@ -34,7 +34,7 @@ fi
 
 # Install torch and CUDA 
 echo "Installing torch, torchvision using pip" # Using conda for installing torch - cuda not working 
-pip install torch==2.2.1 torchvision==0.17.1 --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.2.1 torchvision==0.17.1 --index-url https://download.pytorch.org/whl/cu118  # cuda 12.1 not working for custon cuda operations with cuda 12 libs installed in system, changing pytorch to 11.8. 
 pip install "numpy<2" # Error when torch is imported
 pip install ninja # For parallel installation
 
