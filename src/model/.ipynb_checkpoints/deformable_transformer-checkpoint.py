@@ -6,7 +6,7 @@ import torch
 from torch import nn, Tensor
 from torch.nn.init import xavier_uniform_, normal_
 
-from deformable_attention import MSDeformAttn
+from src.model.deformable_attention.modules import MSDeformAttn
 
 ACTIVATION = "relu"
 DROPOUT = 0.1
@@ -35,7 +35,7 @@ def create_layers(layer, n_layer):
 ###############################################################################
 
 class DeformableTransformerEncoderLayer(nn.Module):
-    def __init__(self, d_model=MODEL_SIZE, d_ffn=LINEAR_SIZE, dropout=DROPOUT, activation=ACTIVATION,n_levels=N_LEVEL, n_heads=N_HEADS, n_points=N_REF_POINTS):
+    def __init__(self, d_model=MODEL_SIZE, d_ffn=LINEAR_SIZE, dropout=DROPOUT, activation=ACTIVATION, n_levels=N_LEVEL, n_heads=N_HEADS, n_points=N_REF_POINTS):
         super().__init__()
 
         # Multi head self attention
@@ -201,8 +201,8 @@ class DeformableTransformer(nn.Module):
 
     def reset_parameters(self):
         for p in self.parameters():
-            #if p.dim() > 1:  # Biases (1D parameters) are left untouched.
-            nn.init.xavier_uniform_(p)
+            if p.dim() > 1:  
+                nn.init.xavier_uniform_(p)
         for m in self.modules():
             if isinstance(m, MSDeformAttn):
                 m._reset_parameters()

@@ -12,11 +12,25 @@ import torch
 
 
 def to_cuda(samples, targets, device):
-    samples = samples.to(device, non_blocking=True)
+    if isinstance(samples, list) and isinstance(samples[0], dict):
+        samples_cuda = []
+        for sample in samples:
+            new_sample = {}
+            for k, v in sample.items():
+                if isinstance(v, torch.Tensor):
+                    new_sample[k] = v.to(device, non_blocking=True)
+                elif isinstance(v, list) and all(isinstance(t, torch.Tensor) for t in v):
+                    new_sample[k] = [t.to(device, non_blocking=True) for t in v]
+                else:
+                    new_sample[k] = v  # leave non-tensor values unchanged
+            samples_cuda.append(new_sample)
+    else:
+        samples_cuda = samples.to(device, non_blocking=True)
+        
     if targets is not None:
         # Only write targets to cuda device if not None, otherwise return None
         targets = [{k: v.to(device, non_blocking=True) for k, v in t.items()} for t in targets]
-    return samples, targets
+    return samples_cuda, targets
 
 
 class data_prefetcher():
@@ -62,7 +76,16 @@ class data_prefetcher():
             samples = self.next_samples
             targets = self.next_targets
             if samples is not None:
-                samples.record_stream(torch.cuda.current_stream())
+                if isinstance(samples, list) and isinstance(samples[0], dict):
+                    for s in samples:
+                        for v in s.values():
+                            if isinstance(v, torch.Tensor):
+                                v.record_stream(torch.cuda.current_stream())
+                            elif isinstance(v, list) and all(isinstance(t, torch.Tensor) for t in v):
+                                for t in v:
+                                    t.record_stream(torch.cuda.current_stream())
+                else:
+                    samples.record_stream(torch.cuda.current_stream())
             if targets is not None:
                 for t in targets:
                     for k, v in t.items():

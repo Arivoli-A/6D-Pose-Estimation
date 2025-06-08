@@ -24,7 +24,7 @@ from typing import Iterable
 
 import numpy as np
 import torch
-import utils.misc as utils
+import src.utils.misc as utils
 from src.utils.data_prefetcher import data_prefetcher
 
 from src.model.pose_estimation_transformer import get_src_permutation_idx

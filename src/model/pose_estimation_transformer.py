@@ -5,11 +5,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from utils.misc import NestedTensor, nested_tensor_from_tensor_list
+from src.utils.misc import NestedTensor, nested_tensor_from_tensor_list
 # from .backbone import build_backbone
-from utils.matcher import HungarianMatcher
+from src.utils.matcher import HungarianMatcher
 from .deformable_transformer import create_layers
-from .position_encoding import PositionEncodingSine, BoundingBoxEncodingSine
+from .position_encoding import PositionEncodingSine, PositionEncodingBoundingBoxSine
 import copy
 
 GROUP_NORM = 32
@@ -141,7 +141,7 @@ class PoseEstimation(nn.Module):
         for proj in self.input_proj:
             nn.init.xavier_uniform_(proj[0].weight, gain=1)
             
-        self.bbox_encoding = BoundingBoxEncodingSine(num_pos_feats=self.hidden_dim / 8)
+        self.bbox_encoding = PositionEncodingBoundingBoxSine(num_pos_feats=self.hidden_dim / 8)
         
     def forward(self, sample_data, target_data = None):
         # if backbone_type is 'input' : sample_data:NestedTensor : object.tensors, object.mask
@@ -374,7 +374,7 @@ class PoseEstimation(nn.Module):
 
         return out, n_boxes_per_sample
 
-     def process_rotation(self, rot_6d):
+    def process_rotation(self, rot_6d):
         """
         Given a 6D rotation output, calculate the 3D rotation matrix in SO(3) using the Gramm Schmit process
         
@@ -394,9 +394,9 @@ class PoseEstimation(nn.Module):
         rot_matrix = torch.cat((x.view(-1, 3, 1), y.view(-1, 3, 1), z.view(-1, 3, 1)), 2)  # Rotation Matrix lying in the SO(3)
         rot_matrix = rot_matrix.view(bs, n_q, 3, 3)  
         return rot_matrix
-
+    
     def process_pose(self, pose_9d):
-        
+    
         # Assume pose_9d has shape [bs, n_q, 9]
         bs, n_q, _ = pose_9d.shape
         
@@ -433,8 +433,8 @@ class PoseEstimation(nn.Module):
 
 class SetCriterion(nn.Module):
     """ This class computes the loss for pose estimation
-        1) Compute hungarian assignment between ground truth boxes and the outputs of the model
-        2) Supervise each pair of matched ground-truth / prediction 
+    1) Compute hungarian assignment between ground truth boxes and the outputs of the model
+    2) Supervise each pair of matched ground-truth / prediction 
     """
     def __init__(self, matcher, weight_dict, losses):
         """ Create the criterion.
@@ -458,7 +458,7 @@ class SetCriterion(nn.Module):
         src_translation = outputs["pred_translation"][idx]
         tgt_translation = torch.cat([t['relative_position'][i] for t, (_, i) in zip(targets, indices)], dim=0)
         n_obj = len(tgt_translation)
-    
+        
         loss_translation = F.mse_loss(src_translation, tgt_translation, reduction='none')
         loss_translation = torch.sum(loss_translation, dim=1)
         loss_translation = torch.sqrt(loss_translation)
@@ -478,7 +478,7 @@ class SetCriterion(nn.Module):
         src_rot = outputs["pred_rotation"][idx]
         tgt_rot = torch.cat([t['relative_rotation'][i] for t, (_, i) in zip(targets, indices)], dim=0)
         n_obj = len(tgt_rot)
-    
+        
         product = torch.bmm(src_rot, tgt_rot.transpose(1, 2))
         trace = torch.sum(product[:, torch.eye(3).bool()], 1)
         theta = torch.clamp(0.5 * (trace - 1), -1 + eps, 1 - eps)
@@ -486,8 +486,8 @@ class SetCriterion(nn.Module):
         losses = {}
         losses["loss_rot"] = rad.sum() / n_obj
         return losses
-
-     def loss_pose(self, outputs, inverse, indices):
+    
+    def loss_pose(self, outputs, inverse, indices):
         """
         Compute the loss related to the pose matrix of pose estimation.
         outputs must contain the key 'pred_pose', while targets must contain the key 'inverse_pose'
@@ -496,17 +496,17 @@ class SetCriterion(nn.Module):
         src_pose = outputs["pred_pose"][idx]
         inv_pose = torch.cat([t['inverse_pose'][i] for t, (_, i) in zip(inverse, indices)], dim=0)
         n_obj = len(inv_pose)
-    
+        
         product = torch.bmm(src_pose, inv_pose)
-         
+        
         identity = torch.eye(4, device=product.device, dtype=product.dtype).unsqueeze(0).expand(n_obj, 4, 4)  # [n_obj, 4, 4]
-
+        
         loss_pose = F.mse_loss(product, identity, reduction='none') # [n_obj, 4, 4]
         loss_pose = loss_pose.view(n_obj, -1).sum(dim=1) # # [n_obj,]
         losses = {}
         losses["loss_pose"] = loss_pose.sum() / n_obj
         return losses
-
+        
     
     
     def get_loss(self, loss, outputs, targets, indices, **kwargs):
@@ -526,21 +526,21 @@ class SetCriterion(nn.Module):
             n_boxes: Number of predicted objects per image
         """
         outputs_without_aux = {k: v for k, v in outputs.items() if k != 'enc_outputs'}
-    
+        
         # Retrieve the matching between the outputs of the last layer and the targets
         indices = self.matcher(outputs_without_aux, targets, n_boxes)
-    
+        
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
             kwargs = {}
             losses.update(self.get_loss(loss, outputs, targets, indices, **kwargs))
-   
+        
         return losses
     
     
     
-             
+         
                 
                 
                 

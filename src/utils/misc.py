@@ -268,8 +268,14 @@ def get_sha():
 
 def collate_fn(batch):
     batch = list(zip(*batch))
-    batch[0] = nested_tensor_from_tensor_list(batch[0])
-    return tuple(batch)
+    # Check if the first element of batch[0] is a dict
+    if isinstance(batch[0][0], dict):
+        # Skip processing, just return batch as tuple
+        return tuple(batch)
+    else:
+        # Otherwise, process batch[0] as usual
+        batch[0] = nested_tensor_from_tensor_list(batch[0])
+        return tuple(batch)
 
 
 def _max_by_axis(the_list):

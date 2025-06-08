@@ -17,12 +17,13 @@ import src.utils.misc as util
 
 from src.model.deformable_transformer import DeformableTransformer
 from src.model.pose_estimation_transformer import PoseEstimation, SetCriterion
+from src.model.position_encoding import PositionEncodingSine
 from src.model.backbone import backbone_data_parser, Joiner
 from src.utils.matcher import HungarianMatcher
 
 from src.utils.engine import train_one_epoch, pose_evaluate
 from src.utils.dataset_preparation import build_dataset
-from src.utils.evaluation_tools.pose_evaluator_init import build_pose_evaluator
+#from src.utils.evaluation_tools.pose_evaluator_init import build_pose_evaluator
 # from src.utils.inference_engine import inference
 
 # Learning parameters
@@ -82,7 +83,7 @@ rotation_loss_coef = 1  # Weight for rotation loss
 
 # Dataset parameters
 dataset = 'hopev2'  # Dataset to train/evaluate on ('ycbv' or 'lmo')
-dataset_path = '/dataset/HOPE_20250606_192620'  # Path to dataset root
+dataset_path = './dataset/HOPE_20250606_192620'  # Path to dataset root
 train_set = "train"  # Dataset split to train on
 eval_set = "test"  # Dataset split to evaluate on
 synt_background = None  # Directory for synthetic background images (optional)
@@ -157,13 +158,12 @@ backbone_args = {
 # PoET-specific configs
 poet_args = {
     'bbox_mode': bbox_mode,
-    'class_mode': class_mode,
     'num_queries': num_queries,
     'num_feature_levels': num_feature_levels,
     'n_classes': n_classes,
     'backbone_type' : backbone_type,
     'loss' : loss,
-    'nn_layer': nn_layer,
+    'n_nn_layer': nn_layer,
 }
 
 # Transformer parameters
@@ -242,13 +242,12 @@ misc_args = {
 def main():
 
     device = torch.device(misc_args["device"])
-
+    
     #seed for reproducibility
-    seed = misc_config["seed"] 
+    seed = misc_args["seed"] 
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
     deform_transformer = DeformableTransformer(**transformer_args)
     
     # backbone 
@@ -259,7 +258,7 @@ def main():
     backbone = Joiner(backbone_data, position_encoding)
 
     
-    model = pose_estimation(backbone = backbone, transformer = deform_transformer, **poet_args)
+    model = PoseEstimation(backbone = backbone, transformer = deform_transformer, **poet_args)
     model.to(device)
     
     matcher = HungarianMatcher(**matcher_args)
@@ -275,8 +274,8 @@ def main():
     # pose_evaluator = build_pose_evaluator(args) - to implement
 
     # Build the dataset for training and validation
-    dataset_train = build_dataset(image_set=dataset_args['train_set'],loss_type = dataset_args['loss'])  # Modified
-    dataset_val = build_dataset(image_set=dataset_args['eval_set'],loss_type = dataset_args['loss'])
+    dataset_train = build_dataset(data_type =dataset_args['train_set'], dataset_path=dataset_args['dataset_path'],loss_type = dataset_args['loss'])  # Modified
+    dataset_val = build_dataset(data_type =dataset_args['eval_set'],dataset_path=dataset_args['dataset_path'],loss_type = dataset_args['loss'])
     
     sampler_train = torch.utils.data.RandomSampler(dataset_train)
     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
@@ -284,11 +283,11 @@ def main():
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, learning_args['batch_size'], drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=utils.collate_fn, num_workers=misc_args['num_workers'],
+                                   collate_fn=util.collate_fn, num_workers=misc_args['num_workers'],
                                    pin_memory=True)
     
     data_loader_val = DataLoader(dataset_val, learning_args['eval_batch_size'], sampler=sampler_val,
-                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=misc_args['num_workers'],
+                                 drop_last=False, collate_fn=util.collate_fn, num_workers=misc_args['num_workers'],
                                  pin_memory=True)
 
     # lr_backbone_names = ["backbone.0", "backbone.neck", "input_proj", "transformer.encoder"]
@@ -408,7 +407,7 @@ def main():
                          'epoch': epoch,
                          'n_parameters': n_parameters}
 
-        if misc_args['output_dir'] and utils.is_main_process():
+        if misc_args['output_dir'] and util.is_main_process():
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
@@ -422,3 +421,6 @@ def main():
     eval_total_time = time.time() - eval_start_time
     eval_total_time_str = str(datetime.timedelta(seconds=int(eval_total_time)))
     print('Evaluation time {}'.format(eval_total_time_str))
+
+if __name__ == "__main__":
+    main()

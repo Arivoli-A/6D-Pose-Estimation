@@ -10,8 +10,9 @@ from torch.utils.data import Dataset
 
 
 
-def build_dataset(dataset_path, loss_type = 'split'):
+def build_dataset(data_type, dataset_path, loss_type = 'split'):
     root = Path(dataset_path)
+    
     assert root.exists(), f'provided dataset path {root} does not exist'
     
     PATHS = {
@@ -19,9 +20,8 @@ def build_dataset(dataset_path, loss_type = 'split'):
         "test": (root / "test"),
         "val": (root / "val"),
     }
-
-    data_folder = PATHS[image_set]
-
+    
+    data_folder = PATHS[data_type]
     dataset = SceneDataset(data_folder, loss_type)
     return dataset
 
@@ -43,17 +43,32 @@ class SceneDataset(Dataset):
     def __getitem__(self, idx):
         npz_path = os.path.join(self.npz_folder, self.files[idx])
         data = np.load(npz_path, allow_pickle=True)
+        
+        features_tensors = [torch.from_numpy(f).float() for f in data['features']] 
+        
+        cleaned_poses = []
 
+        for pose in data['gt_poses']:
+            # Convert each 4x4 pose matrix (which currently has dtype=object) to float32 array
+            numeric_pose = np.array(pose, dtype=np.float32)
+            cleaned_poses.append(numeric_pose)
+        
+        # Now stack all poses into one numpy array of shape (11, 4, 4)
+        poses_np = np.stack(cleaned_poses)
+        
+        # Convert to torch tensor
+        gt_poses_tensor = torch.from_numpy(poses_np)
+        
         sample = {
             'boxes': torch.tensor(data['boxes'], dtype=torch.float32),
             'labels': torch.tensor(data['labels'], dtype=torch.int32),
             'confidences': torch.tensor(data['confidences'], dtype=torch.float32),
-            'features': torch.tensor(data['features'], dtype=torch.float32),
+            'features': features_tensors,
             'strides': torch.tensor(data['strides'], dtype=torch.float32),
             'channels': torch.tensor(data['channels'], dtype=torch.float32),
             'image_path': str(data['image_path'].item()),  # Convert scalar array to string
-            'gt_poses': torch.tensor(data['gt_poses'], dtype=torch.float32),
-            'mask': torch.tensor(data['mask'], dtype=torch.uint8)  
+            'gt_poses': gt_poses_tensor,
+            'mask': torch.tensor(data['mask'], dtype=torch.uint8).unsqueeze(0) # 1x640x640  
         }
         pred_objects = torch.cat([sample['boxes'], sample['confidences'].unsqueeze(1), sample['labels'].unsqueeze(1)], dim=1)
         features = sample['features']

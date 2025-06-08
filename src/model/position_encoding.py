@@ -4,7 +4,7 @@ import math
 import torch
 from torch import nn
 
-from utils.misc import NestedTensor
+from src.utils.misc import NestedTensor
 
 DTYPE = torch.float32
 
@@ -27,9 +27,11 @@ class PositionEncodingSine(nn.Module):
         assert mask is not None
         
         not_mask = ~mask   # Get valid regions of feature maps
+        #print(not_mask.shape)
         y_embed = not_mask.cumsum(dim = 1, dtype=DTYPE) # Assign position to valid regions. height (rows)
         x_embed = not_mask.cumsum(dim = 2, dtype=DTYPE) # Assign position to valid regions. width (cols)
-        
+        #print(y_embed.shape)
+        #print(x_embed.shape)
         if self.normalize:
             eps = 1e-6
             y_embed = (y_embed - 0.5) / (y_embed[:, -1:, :] + eps) * self.scale  # shifts the index so that position 1 becomes 0.5
@@ -45,7 +47,7 @@ class PositionEncodingSine(nn.Module):
         pos = torch.cat((pos_y, pos_x), dim=3).permute(0, 3, 1, 2)
         return pos
 
-class PositionEncodingBoundingBoxSine(nn.module):
+class PositionEncodingBoundingBoxSine(nn.Module):
     # Position Embedding for bounding box 
     def __init__(self, num_pos_feats=32, temperature=2):
         super().__init__()
