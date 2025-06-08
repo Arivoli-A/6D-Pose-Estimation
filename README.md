@@ -17,6 +17,13 @@ Finally to copy the MSDeformAttn class from the build folder, run the following 
 ```bash
 . deform_attn_file.sh
 ```
+To download the pre computed backbone data, run the following command:
+
+```bash
+. download_data.sh
+```
+Record the path of the folder containing the data, which should be provided as the ```dataset_path``` in ```main.py```.
+
 Then run ```main.py``` file using the following command
 
 ```bash

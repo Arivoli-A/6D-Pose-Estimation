@@ -44,6 +44,7 @@ pip install ninja # For parallel installation
 # Install additional packages for deformable DETR
 echo "Installing additional packages "
 pip install -r $DEFORM_DETR_DIR"/requirements.txt"
+pip install -r requirements.txt
 
 # Verify the installation of CUDA
 echo "Verifying CUDA installation..."
