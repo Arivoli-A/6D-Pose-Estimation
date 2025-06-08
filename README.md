@@ -1,6 +1,6 @@
 # 6D Pose Estimation from RGB Images
 
-## Create Environment
+## Setting up environment and run the model
 
 To set up the conda environment, run the following command:
 
