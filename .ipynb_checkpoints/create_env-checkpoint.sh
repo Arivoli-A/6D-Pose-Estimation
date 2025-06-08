@@ -34,7 +34,7 @@ fi
 
 # Install torch and CUDA 
 echo "Installing torch, torchvision using pip" # Using conda for installing torch - cuda not working 
-pip install torch==2.2.1 torchvision==0.17.1 --index-url https://download.pytorch.org/whl/cu118  # cuda 12.1 not working for custon cuda operations with cuda 12 libs installed in system, changing pytorch to 11.8. 
+pip install torch==2.2.1 torchvision==0.17.1 --index-url https://download.pytorch.org/whl/cu121  # cuda 12.1 not working for custon cuda operations with cuda 12 libs installed in system, changing pytorch to 11.8. Cuda, pytorch mismatch error duing deformable attention build.  
 pip install "numpy<2" # Error when torch is imported
 pip install ninja # For parallel installation
 
@@ -44,6 +44,7 @@ pip install ninja # For parallel installation
 # Install additional packages for deformable DETR
 echo "Installing additional packages "
 pip install -r $DEFORM_DETR_DIR"/requirements.txt"
+pip install -r requirements.txt
 
 # Verify the installation of CUDA
 echo "Verifying CUDA installation..."
