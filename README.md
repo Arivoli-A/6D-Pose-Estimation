@@ -17,3 +17,8 @@ Finally to copy the MSDeformAttn class from the build folder, run the following 
 ```bash
 . deform_attn_file.sh
 ```
+Then run ```main.py``` file using the following command
+
+```bash
+python main.py
+```
