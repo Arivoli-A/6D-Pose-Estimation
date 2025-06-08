@@ -19,7 +19,7 @@ from src.model.deformable_transformer import DeformableTransformer
 from src.model.pose_estimation_transformer import PoseEstimation, SetCriterion
 from src.model.position_encoding import PositionEncodingSine
 from src.model.backbone import backbone_data_parser, Joiner
-from src.utils.matcher import HungarianMatcher
+from src.utils.pose_matcher import HungarianMatcher, PoseMatcher
 
 from src.utils.engine import train_one_epoch, pose_evaluate
 from src.utils.dataset_preparation import build_dataset
@@ -50,7 +50,7 @@ backbone_agnostic_nms = False  # Whether to perform class-agnostic NMS
 dilation = False  # Replace stride with dilation in last conv block if True
 position_embedding = 'sine'  # Positional embedding type ('sine' or 'learned')
 position_embedding_scale = 2 * 3.141592653589793  # Scale for positional embedding
-num_feature_levels = 4  # Number of feature levels used
+num_feature_levels = 3  # Number of feature levels used
 
 # PoET-specific configs
 bbox_mode = 'backbone'  # Bounding box mode for query embedding: gt/backbone/jitter
@@ -87,7 +87,7 @@ dataset_path = './dataset/HOPE_20250606_192620'  # Path to dataset root
 train_set = "train"  # Dataset split to train on
 eval_set = "test"  # Dataset split to evaluate on
 synt_background = None  # Directory for synthetic background images (optional)
-n_classes = 21  # Number of object classes
+n_classes = 28  # Number of object classes - for HOPE dataset
 jitter_probability = 0.5  # Probability to apply jitter to bounding boxes
 rgb_augmentation = False  # Use RGB augmentation during training
 grayscale = False  # Use grayscale augmentation during training
@@ -109,7 +109,7 @@ inference_output = None  # Directory to save inference results
 # Miscellaneous
 sgd = False  # Use SGD optimizer if True
 save_interval = 5  # Save checkpoint every N epochs
-output_dir = '/output'  # Directory to save outputs/checkpoints
+output_dir = './output'  # Directory to save outputs/checkpoints
 device = 'cuda'  # Device for training/testing ('cuda' or 'cpu')
 seed = 42  # Random seed for reproducibility
 resume = ''  # Path to checkpoint to resume training from
@@ -119,8 +119,9 @@ eval_bop = False  # Run model in BOP challenge evaluation mode
 num_workers = 0  # Number of data loader worker threads
 cache_mode = False  # Cache images in memory if True
 override_resumed_lr_drop = True
-
-
+pre_trained_weights = False
+pre_trained_weights_location= './pre_train'
+pre_train_weight_filename = './pre_train/pre_train_weight_name.txt'
 
 # Learning parameters
 learning_args = {
@@ -235,7 +236,10 @@ misc_args = {
     'eval_bop': eval_bop,
     'num_workers': num_workers,
     'cache_mode': cache_mode,
-    'override_resumed_lr_drop' : override_resumed_lr_drop, 
+    'override_resumed_lr_drop' : override_resumed_lr_drop,
+    'pre_trained_weights':pre_trained_weights,
+    'pre_trained_weights_location':pre_trained_weights_location,
+    'pre_trained_weights_filename' : pre_train_weight_filename,
 }
 
 
@@ -261,7 +265,7 @@ def main():
     model = PoseEstimation(backbone = backbone, transformer = deform_transformer, **poet_args)
     model.to(device)
     
-    matcher = HungarianMatcher(**matcher_args)
+    matcher = PoseMatcher() # HungarianMatcher(**matcher_args)
     
     weight_dict = {'loss_trans': loss_args['translation_loss_coef'], 'loss_rot': loss_args['rotation_loss_coef']}
     losses = ['translation', 'rotation']
@@ -331,7 +335,21 @@ def main():
         
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, learning_args['lr_drop'])
 
-
+    if misc_args['pre_trained_weights']:
+        breakpoint()
+        with open(misc_args['pre_trained_weights_filename'], 'r') as file:
+            lines = file.readlines()
+            last_line = lines[-1].strip() 
+        weights_path = f"{misc_args['pre_trained_weights_location']}/{last_line}"
+        print(f"Loaded weights from: {weights_path}")
+        
+        weights = torch.load(weights_path, map_location='cpu')
+        missing_keys, unexpected_keys = model.load_state_dict(weights['model'], strict=False)
+        unexpected_keys = [k for k in unexpected_keys if not (k.endswith('total_params') or k.endswith('total_ops'))]
+        if len(missing_keys) > 0:
+            print('Missing Keys: {}'.format(missing_keys))
+        if len(unexpected_keys) > 0:
+            print('Unexpected Keys: {}'.format(unexpected_keys))
 
     output_dir = Path(misc_args['output_dir'])
     # Load checkpoint
@@ -386,12 +404,13 @@ def main():
             if (epoch + 1) % learning_args['lr_drop'] == 0 or (epoch + 1) % misc_args['save_interval'] == 0:
                 checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
             for checkpoint_path in checkpoint_paths:
-                utils.save_on_master({
+                util.save_on_master({
                     'model': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'lr_scheduler': lr_scheduler.state_dict(),
                     'epoch': epoch,
-                    'args': args,
+                    'args': [learning_args,backbone_args,poet_args,transformer_args,matcher_args,loss_args,
+                                dataset_args,evaluator_args,inference_args,misc_args],
                 }, checkpoint_path)
 
         # Do evaluation on the validation set every n epochs

@@ -77,7 +77,7 @@ class PoseEstimation(nn.Module):
         self.backbone = backbone
         self.backbone_type = backbone_type
         self.n_queries = num_queries
-        self.n_classes = n_classes + 1  # +1 for dummy/background class
+        self.n_classes = n_classes   # No background classes used so no need for extra class for background class
         self.bbox_mode = bbox_mode
         self.loss = loss
         self.n_nn_layer = n_nn_layer
@@ -233,7 +233,7 @@ class PoseEstimation(nn.Module):
                         backbone_boxes = backbone_boxes[:self.n_queries]
                         query_embed = query_embed[:self.n_queries]
                         
-                    n_boxes_per_sample.append(n_boxes)
+                    n_boxes_per_sample_data.append(n_boxes)
                     
                 pred_box_data.append(backbone_boxes)
                 pred_class_data.append(backbone_classes)
@@ -298,6 +298,7 @@ class PoseEstimation(nn.Module):
             assert mask is not None
             
         if self.num_feature_levels > len(src_data):
+            print(len(src_data))
             # If more feature levels are required than the backbone provides then additional feature maps are created
             
             len_src_data = len(src_data)
@@ -322,11 +323,13 @@ class PoseEstimation(nn.Module):
         # Pass everything to the transformer
         hs, init_reference, _, _, _ = self.transformer(src_data, mask_data, pos, query_embed_data, reference_point_data)
     
-        output_translation = []
-        output_rotation = []
-        output_pose = []
+        output_translation_data = []
+        output_rotation_data = []
+        output_pose_data = []
         
         bs, _ = pred_class_data.shape
+        #print(pred_class_data.shape)
+        #print(hs.shape)
         output_idx = torch.where(pred_class_data > 0, pred_class_data, 0).view(-1)
     
         # Iterate over the decoder outputs to calculate the intermediate and final outputs (translation and rotation)
@@ -372,7 +375,7 @@ class PoseEstimation(nn.Module):
             output_pose_data = torch.stack(output_pose_data)
             out = {'pred_pose': output_pose_data[-1], 'pred_boxes': pred_box_data, 'pred_classes': pred_class_data}
 
-        return out, n_boxes_per_sample
+        return out, n_boxes_per_sample_data
 
     def process_rotation(self, rot_6d):
         """

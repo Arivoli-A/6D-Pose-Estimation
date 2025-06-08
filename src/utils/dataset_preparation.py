@@ -76,8 +76,11 @@ class SceneDataset(Dataset):
             target = {'relative_position' : sample['gt_poses'][:,:3,3], 'relative_rotation' : sample['gt_poses'][:,:3,:3]}
         else : 
             target = {'inverse_pose': torch.inverse(sample['gt_poses'])}
+            
         img_mask = sample['mask']
-
         sample_output = {'features': features, 'prediction': pred_objects, 'img_mask' : img_mask}
+
+        target['labels'] = sample['labels']
+        target['boxes'] = sample['boxes'] # Must be replaced with ground truth boxes
 
         return sample_output, target

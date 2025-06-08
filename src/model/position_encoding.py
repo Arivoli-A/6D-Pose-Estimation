@@ -28,6 +28,7 @@ class PositionEncodingSine(nn.Module):
         
         not_mask = ~mask   # Get valid regions of feature maps
         #print(not_mask.shape)
+        #print(x.shape)
         y_embed = not_mask.cumsum(dim = 1, dtype=DTYPE) # Assign position to valid regions. height (rows)
         x_embed = not_mask.cumsum(dim = 2, dtype=DTYPE) # Assign position to valid regions. width (cols)
         #print(y_embed.shape)
@@ -55,7 +56,7 @@ class PositionEncodingBoundingBoxSine(nn.Module):
         self.temperature = temperature
 
     def forward(self, bbox: torch.Tensor):        
-        dim_t = torch.arange(self.num_pos_feats, dtype=DTYPE, device=x.bbox)
+        dim_t = torch.arange(self.num_pos_feats, dtype=DTYPE, device=bbox.device)
         dim_t = self.temperature ** dim_t #self.temperature ** (2 * (dim_t // 2) / self.num_pos_feats)
 
         x_enc = bbox[:, 0, None] / dim_t
@@ -72,4 +73,4 @@ class PositionEncodingBoundingBoxSine(nn.Module):
         w_enc = torch.cat((w_enc.sin(), w_enc.cos()), dim=-1)
         h_enc = torch.cat((h_enc.sin(), h_enc.cos()), dim=-1)
         pos_embed = torch.cat((x_enc, y_enc, w_enc, h_enc), dim=-1)
-        return pos    
+        return pos_embed    

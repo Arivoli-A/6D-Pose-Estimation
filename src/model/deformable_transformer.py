@@ -175,7 +175,7 @@ class DeformableTransformer(nn.Module):
     
     def __init__(self, d_model=MODEL_SIZE, nhead=N_HEADS,
                  num_encoder_layers=N_ENC, num_decoder_layers=N_DEC, dim_feedforward=LINEAR_SIZE, dropout=DROPOUT,
-                 activation=ACTIVATION, return_intermediate_dec=False,
+                 activation=ACTIVATION, return_intermediate_dec=True,
                  num_feature_levels=N_LEVEL, dec_n_points=N_REF_POINTS,  enc_n_points=N_REF_POINTS):
         super().__init__()
 
@@ -260,6 +260,15 @@ class DeformableTransformer(nn.Module):
 
         
         return hs, init_reference_out, inter_references_out, None, None
+
+    def valid_ratio(self, mask):
+        _, H, W = mask.shape
+        valid_H = torch.sum(~mask[:, :, 0], 1)
+        valid_W = torch.sum(~mask[:, 0, :], 1)
+        valid_ratio_h = valid_H.float() / H
+        valid_ratio_w = valid_W.float() / W
+        valid_ratio = torch.stack([valid_ratio_w, valid_ratio_h], -1)
+        return valid_ratio
 
         
         

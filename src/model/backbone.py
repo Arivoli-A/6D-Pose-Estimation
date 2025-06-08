@@ -22,12 +22,12 @@ class backbone_data_parser(nn.Module):
             mask_img = sample_data['img_mask']
     
             assert mask_img is not None
-            print(mask_img.shape)
+            #print(mask_img.shape)
             out = {}  # Dict[str, NestedTensor]
             for i, x in enumerate(features):
                 # Resize mask to match feature spatial dims
                 resized_mask = F.interpolate(mask_img[None].float(), size=x.shape[-2:]).to(torch.bool)[0] # originally it was mask_img[None] : mask_img was nxhxw
-                print(resized_mask.shape)
+                #print(resized_mask.shape)
                 out[i] = NestedTensor(x, resized_mask)
     
             predictions_out.append(prediction_out)
@@ -45,9 +45,11 @@ class backbone_data_parser(nn.Module):
     
         # Convert lists to batched tensors where possible
         for name, tensor_list in out_batch_dict.items():
+            #print(name)
+            #print(tensor_list[0].tensors.shape)
             out_batch_dict[name] = NestedTensor(
-                torch.stack([x.tensors for x in tensor_list]),  # Stack tensors along batch dimension
-                torch.stack([x.mask for x in tensor_list])     # Stack masks along batch dimension
+                torch.cat([x.tensors for x in tensor_list],dim=0),  # Stack tensors along batch dimension
+                torch.cat([x.mask for x in tensor_list],dim=0)     # Stack masks along batch dimension
             )
     
         # Return predictions and batched output
