@@ -22,7 +22,8 @@ Then run ```main.py``` file using the following command
 ```bash
 python main.py
 ```
-If we want to use pretrained weights for initial start point, then run the following command: 
+If we want to use pretrained weights for initial start point, then run the following command:
+
 (NOTE: Pretrained weights are from PoET model (https://www.aau.at/en/smart-systems-technologies/control-of-networked-systems/datasets/poet-pose-estimation-transformer-for-single-view-multi-object-6d-pose-estimation/#tab-id-2) with YOLO-v4 backbone, so caution regarding strides and shapes of weight is needed before use)
 
 ```bash
