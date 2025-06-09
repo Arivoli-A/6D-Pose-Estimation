@@ -68,7 +68,7 @@ class SceneDataset(Dataset):
             'channels': torch.tensor(data['channels'], dtype=torch.float32),
             'image_path': str(data['image_path'].item()),  # Convert scalar array to string
             'gt_poses': gt_poses_tensor,
-            'mask': torch.tensor(data['mask'], dtype=torch.uint8).unsqueeze(0) # 1x640x640
+            'mask': torch.tensor(data['mask'], dtype=torch.uint8).unsqueeze(0), # 1x640x640
             'gt_boxes' : torch.tensor(data['gt_boxes'], dtype=torch.float32)
         }
         pred_objects = torch.cat([sample['boxes'], sample['confidences'].unsqueeze(1), sample['labels'].unsqueeze(1)], dim=1)
