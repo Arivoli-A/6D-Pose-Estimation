@@ -14,6 +14,8 @@ from torch.utils.data import Dataset, DataLoader
 import src.utils.misc as util
 #import data_utils.samplers as samplers
 #from data_utils import build_dataset
+from src.model.pose_evaluator_init import build_pose_evaluator
+
 
 from src.model.deformable_transformer import DeformableTransformer
 from src.model.pose_estimation_transformer import PoseEstimation, SetCriterion
@@ -23,8 +25,6 @@ from src.utils.pose_matcher import HungarianMatcher, PoseMatcher
 
 from src.utils.engine import train_one_epoch, pose_evaluate
 from src.utils.dataset_preparation import build_dataset
-#from src.utils.evaluation_tools.pose_evaluator_init import build_pose_evaluator
-# from src.utils.inference_engine import inference
 
 # Learning parameters
 lr = 2e-4  # Learning rate for main optimizer
@@ -83,7 +83,9 @@ rotation_loss_coef = 1  # Weight for rotation loss
 
 # Dataset parameters
 dataset = 'hopev2'  # Dataset to train/evaluate on ('ycbv' or 'lmo')
-dataset_path = './dataset/HOPE_20250606_192620'  # Path to dataset root
+# dataset_path = './dataset/HOPE_20250608/valid_npz_outputs/'  # Path to dataset root
+dataset_path = './dataset/HOPE_20250608/'
+
 train_set = "train"  # Dataset split to train on
 eval_set = "test"  # Dataset split to evaluate on
 synt_background = None  # Directory for synthetic background images (optional)
@@ -112,9 +114,9 @@ save_interval = 5  # Save checkpoint every N epochs
 output_dir = './output'  # Directory to save outputs/checkpoints
 device = 'cuda'  # Device for training/testing ('cuda' or 'cpu')
 seed = 42  # Random seed for reproducibility
-resume = ''  # Path to checkpoint to resume training from
+resume = './output/checkpoint0049.pth'  # Path to checkpoint to resume training from
 start_epoch = 0  # Epoch to start training at
-eval_mode = False  # Run model in evaluation mode
+eval_mode = True  # Run model in evaluation mode
 eval_bop = False  # Run model in BOP challenge evaluation mode
 num_workers = 0  # Number of data loader worker threads
 cache_mode = False  # Cache images in memory if True
@@ -197,7 +199,7 @@ loss_args = {
 # Dataset parameters
 dataset_args = {
     'dataset': dataset,
-    'dataset_path': dataset_path,
+    'dataset_path': dataset_path + 'valid_npz_outputs/',
     'train_set': train_set,
     'eval_set': eval_set,
     'synthetic_background': synt_background,
@@ -242,204 +244,160 @@ misc_args = {
     'pre_trained_weights_filename' : pre_train_weight_filename,
 }
 
+rotation_representation = '6d'
 
 def main():
-
     device = torch.device(misc_args["device"])
-    
-    #seed for reproducibility
-    seed = misc_args["seed"] 
+
+    # Set seed
+    seed = misc_args["seed"]
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
+
     deform_transformer = DeformableTransformer(**transformer_args)
-    
-    # backbone 
     N_steps = transformer_args['d_model'] // 2
-    position_encoding = PositionEncodingSine(N_steps, normalize = True)
-    
-    backbone_data = backbone_data_parser(backbone_args['strides'],backbone_args['num_channels'])
+    position_encoding = PositionEncodingSine(N_steps, normalize=True)
+
+    backbone_data = backbone_data_parser(backbone_args['strides'], backbone_args['num_channels'])
     backbone = Joiner(backbone_data, position_encoding)
 
-    
-    model = PoseEstimation(backbone = backbone, transformer = deform_transformer, **poet_args)
+    model = PoseEstimation(backbone=backbone, transformer=deform_transformer, **poet_args)
     model.to(device)
-    
-    matcher = PoseMatcher() # HungarianMatcher(**matcher_args)
-    
-    weight_dict = {'loss_trans': loss_args['translation_loss_coef'], 'loss_rot': loss_args['rotation_loss_coef']}
-    losses = ['translation', 'rotation']
-    criterion = SetCriterion(matcher, weight_dict, losses)
+
+    matcher = PoseMatcher()
+    weight_dict = {
+        'loss_trans': loss_args['translation_loss_coef'],
+        'loss_rot': loss_args['rotation_loss_coef']
+    }
+    criterion = SetCriterion(matcher, weight_dict, ['translation', 'rotation'])
     criterion.to(device)
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('number of params:', n_parameters)
 
-    # pose_evaluator = build_pose_evaluator(args) - to implement
+    # pose_evaluator = build_pose_evaluator(
+    #     argparse.Namespace(
+    #         models=evaluator_args["models"],
+    #         model_symmetry=evaluator_args["model_symmetry"],
+    #         class_info=evaluator_args["class_info"]
+    #     )
+    # )
 
-    # Build the dataset for training and validation
-    dataset_train = build_dataset(data_type =dataset_args['train_set'], dataset_path=dataset_args['dataset_path'],loss_type = dataset_args['loss'])  # Modified
-    dataset_val = build_dataset(data_type =dataset_args['eval_set'],dataset_path=dataset_args['dataset_path'],loss_type = dataset_args['loss'])
-    
+    pose_evaluator = build_pose_evaluator(
+        argparse.Namespace(
+            dataset='hope',
+            dataset_path=dataset_path,
+            models='meshes/eval',
+            model_symmetry='',
+            class_info=''  # Not used for HOPE
+        )
+    )
+
+
+    dataset_train = build_dataset(data_type=dataset_args['train_set'], dataset_path=dataset_args['dataset_path'], loss_type=dataset_args['loss'])
+    dataset_val = build_dataset(data_type=dataset_args['eval_set'], dataset_path=dataset_args['dataset_path'], loss_type=dataset_args['loss'])
+
     sampler_train = torch.utils.data.RandomSampler(dataset_train)
     sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-
     batch_sampler_train = torch.utils.data.BatchSampler(sampler_train, learning_args['batch_size'], drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=util.collate_fn, num_workers=misc_args['num_workers'],
-                                   pin_memory=True)
-    
+                                   collate_fn=util.collate_fn, num_workers=misc_args['num_workers'], pin_memory=True)
     data_loader_val = DataLoader(dataset_val, learning_args['eval_batch_size'], sampler=sampler_val,
-                                 drop_last=False, collate_fn=util.collate_fn, num_workers=misc_args['num_workers'],
-                                 pin_memory=True)
+                                 drop_last=False, collate_fn=util.collate_fn, num_workers=misc_args['num_workers'], pin_memory=True)
 
-    # lr_backbone_names = ["backbone.0", "backbone.neck", "input_proj", "transformer.encoder"]
     def match_name_keywords(n, name_keywords):
-        out = False
-        for b in name_keywords:
-            if b in n:
-                out = True
-                break
-        return out
+        return any(b in n for b in name_keywords)
 
-    for n, p in model.named_parameters():  # n : name, p : parameter
-        if "backbone" in n:   
+    for n, p in model.named_parameters():
+        if "backbone" in n:
             p.requires_grad = False
         print(n)
 
     param_dicts = [
         {
-            "params":
-                [p for n, p in model.named_parameters()
-                 if not match_name_keywords(n, learning_args['lr_backbone_names']) and not match_name_keywords(n,learning_args['lr_linear_proj_names']) and p.requires_grad],
+            "params": [p for n, p in model.named_parameters()
+                       if not match_name_keywords(n, learning_args['lr_backbone_names'])
+                       and not match_name_keywords(n, learning_args['lr_linear_proj_names'])
+                       and p.requires_grad],
             "lr": learning_args['lr'],
         },
         {
-            "params": [p for n, p in model.named_parameters() if
-                       match_name_keywords(n, learning_args['lr_backbone_names']) and p.requires_grad],
+            "params": [p for n, p in model.named_parameters()
+                       if match_name_keywords(n, learning_args['lr_backbone_names']) and p.requires_grad],
             "lr": learning_args['lr_backbone'],
         },
         {
-            "params": [p for n, p in model.named_parameters() if
-                       match_name_keywords(n, learning_args['lr_linear_proj_names']) and p.requires_grad],
+            "params": [p for n, p in model.named_parameters()
+                       if match_name_keywords(n, learning_args['lr_linear_proj_names']) and p.requires_grad],
             "lr": learning_args['lr'] * learning_args['lr_linear_proj_mult'],
         }
     ]
-    if learning_args['sgd']:
-        optimizer = torch.optim.SGD(param_dicts, lr=learning_args['lr'], momentum=0.9,
-                                    weight_decay=learning_args['weight_decay'])
-    else:
-        optimizer = torch.optim.AdamW(param_dicts, lr=learning_args['lr'],
-                                      weight_decay=learning_args['weight_decay'])
-        
+
+    optimizer = torch.optim.SGD(param_dicts, lr=learning_args['lr'], momentum=0.9, weight_decay=learning_args['weight_decay']) if learning_args['sgd'] \
+        else torch.optim.AdamW(param_dicts, lr=learning_args['lr'], weight_decay=learning_args['weight_decay'])
+
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, learning_args['lr_drop'])
 
     if misc_args['pre_trained_weights']:
-        breakpoint()
         with open(misc_args['pre_trained_weights_filename'], 'r') as file:
-            lines = file.readlines()
-            last_line = lines[-1].strip() 
-        weights_path = f"{misc_args['pre_trained_weights_location']}/{last_line}"
-        print(f"Loaded weights from: {weights_path}")
-        
-        weights = torch.load(weights_path, map_location='cpu')
-        missing_keys, unexpected_keys = model.load_state_dict(weights['model'], strict=False)
-        unexpected_keys = [k for k in unexpected_keys if not (k.endswith('total_params') or k.endswith('total_ops'))]
-        if len(missing_keys) > 0:
-            print('Missing Keys: {}'.format(missing_keys))
-        if len(unexpected_keys) > 0:
-            print('Unexpected Keys: {}'.format(unexpected_keys))
+            last_line = file.readlines()[-1].strip()
+        weights = torch.load(f"{misc_args['pre_trained_weights_location']}/{last_line}", map_location='cpu')
+        model.load_state_dict(weights['model'], strict=False)
 
     output_dir = Path(misc_args['output_dir'])
-    # Load checkpoint
+
     if misc_args['resume']:
         checkpoint = torch.load(misc_args['resume'], map_location='cpu')
-        missing_keys, unexpected_keys = model.load_state_dict(checkpoint['model'], strict=False)
-        unexpected_keys = [k for k in unexpected_keys if not (k.endswith('total_params') or k.endswith('total_ops'))]
-        if len(missing_keys) > 0:
-            print('Missing Keys: {}'.format(missing_keys))
-        if len(unexpected_keys) > 0:
-            print('Unexpected Keys: {}'.format(unexpected_keys))
-        if not misc_args['eval'] and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
-            import copy
-            p_groups = copy.deepcopy(optimizer.param_groups)
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            for pg, pg_old in zip(optimizer.param_groups, p_groups):
-                pg['lr'] = pg_old['lr']
-                pg['initial_lr'] = pg_old['initial_lr']
-            print(optimizer.param_groups)
-            lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-            # This is a hack for doing experiment that resume from checkpoint and also modify lr scheduler
-            #  (e.g., decrease lr in advance).
-            
-            if misc_args['override_resumed_lr_drop']:
-                print(
-                    'Warning: (hack) misc_args[override_resumed_lr_drop] is set to True, so lr_drop would override lr_drop in resumed lr_scheduler.')
-                lr_scheduler.step_size = learning_args['lr_drop']
-                lr_scheduler.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
-            lr_scheduler.step(lr_scheduler.last_epoch)
-            misc_args['start_epoch'] = checkpoint['epoch'] + 1
+        model.load_state_dict(checkpoint['model'], strict=False)
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        misc_args['start_epoch'] = checkpoint['epoch'] + 1
 
-    # Evaluate the models performance
     if misc_args['eval']:
-        if misc_args['resume']:
-            eval_epoch = checkpoint['epoch']
-        else:
-            eval_epoch = None
-
-        #pose_evaluate(model, matcher, pose_evaluator, data_loader_val, misc_args['eval_set'], dataset_args['bbox_mode'],
-         #             args.rotation_representation, device, args.output_dir, eval_epoch)
+        eval_epoch = checkpoint['epoch'] if misc_args['resume'] else None
+        pose_evaluate(model, matcher, pose_evaluator, data_loader_val,
+                      dataset_args['eval_set'], dataset_args['bbox_mode'],
+                      rotation_representation, device, misc_args['output_dir'], eval_epoch)
         return
 
     print("Start training")
     start_time = time.time()
+
     for epoch in range(misc_args['start_epoch'], learning_args['epochs']):
-        train_stats = train_one_epoch(
-            model, criterion, data_loader_train, optimizer, device, epoch, learning_args['clip_max_norm'])
+        train_stats = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, learning_args['clip_max_norm'])
         lr_scheduler.step()
+
         if misc_args['output_dir']:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
-            # extra checkpoint before LR drop and every 5 epochs
             if (epoch + 1) % learning_args['lr_drop'] == 0 or (epoch + 1) % misc_args['save_interval'] == 0:
                 checkpoint_paths.append(output_dir / f'checkpoint{epoch:04}.pth')
-            for checkpoint_path in checkpoint_paths:
+            for path in checkpoint_paths:
                 util.save_on_master({
                     'model': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'lr_scheduler': lr_scheduler.state_dict(),
                     'epoch': epoch,
-                    'args': [learning_args,backbone_args,poet_args,transformer_args,matcher_args,loss_args,
-                                dataset_args,evaluator_args,inference_args,misc_args],
-                }, checkpoint_path)
+                    'args': [learning_args, backbone_args, poet_args, transformer_args, matcher_args,
+                             loss_args, dataset_args, evaluator_args, inference_args, misc_args]
+                }, path)
 
-        # Do evaluation on the validation set every n epochs
         if epoch % evaluator_args['eval_interval'] == 0:
-           # pose_evaluate(model, matcher, pose_evaluator, data_loader_val, args.eval_set, args.bbox_mode,
-             #             args.rotation_representation, device, args.output_dir, epoch)
+            pose_evaluate(model, matcher, pose_evaluator, data_loader_val,
+                          dataset_args['eval_set'], dataset_args['bbox_mode'],
+                          rotation_representation, device, misc_args['output_dir'], epoch)
 
-            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                         'epoch': epoch,
-                         'n_parameters': n_parameters}
-        else:
-            log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                         'epoch': epoch,
-                         'n_parameters': n_parameters}
-
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch, 'n_parameters': n_parameters}
         if misc_args['output_dir'] and util.is_main_process():
             with (output_dir / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
-    total_time = time.time() - start_time
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    print(f'Training time {str(datetime.timedelta(seconds=int(time.time() - start_time)))}')
     print('Evaluate final trained model')
-    eval_start_time = time.time()
-    #pose_evaluate(model, matcher, pose_evaluator, data_loader_val, args.eval_set, args.bbox_mode,
-     #             args.rotation_representation, device, args.output_dir)
-    eval_total_time = time.time() - eval_start_time
-    eval_total_time_str = str(datetime.timedelta(seconds=int(eval_total_time)))
-    print('Evaluation time {}'.format(eval_total_time_str))
+    pose_evaluate(model, matcher, pose_evaluator, data_loader_val,
+                  dataset_args['eval_set'], dataset_args['bbox_mode'],
+                  rotation_representation, device, misc_args['output_dir'], learning_args['epochs'] - 1)
 
 if __name__ == "__main__":
     main()

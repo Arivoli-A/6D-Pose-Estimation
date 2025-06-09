@@ -66,6 +66,7 @@ class PoseEvaluatorLMO(object):
             self.poses_img[cls] = []
             self.camera_intrinsics[cls] = []
 
+    ### modified this function to update the threshold according to the model ###
     def evaluate_pose_adds(self, output_path):
         """
         Evaluate 6D pose by ADD(-S) metric
@@ -74,6 +75,8 @@ class PoseEvaluatorLMO(object):
 
         For metric definition we refer to http://www.stefan-hinterstoisser.com/papers/hinterstoisser2012accv.pdf
         """
+        thresholds = [0.2, 0.4, 0.6]
+        threshold_str = ['0.2', '0.4', '0.6']
         output_dir = output_path + "adds/"
         if os.path.exists(output_dir):
             shutil.rmtree(output_dir)
@@ -92,24 +95,35 @@ class PoseEvaluatorLMO(object):
 
         n_classes = len(self.classes)
         count_all = np.zeros((n_classes), dtype=np.float32)
-        count_correct = {k: np.zeros((n_classes), dtype=np.float32) for k in ['0.02', '0.05', '0.10']}
+        # count_correct = {k: np.zeros((n_classes), dtype=np.float32) for k in ['0.02', '0.05', '0.10']}
+        count_correct = {k: np.zeros((n_classes), dtype=np.float32) for k in threshold_str}
 
         threshold_002 = np.zeros((n_classes), dtype=np.float32)
         threshold_005 = np.zeros((n_classes), dtype=np.float32)
         threshold_010 = np.zeros((n_classes), dtype=np.float32)
 
         adds_results = {}
-        adds_results["thresholds"] = [0.02, 0.05, 0.10]
+        # adds_results["thresholds"] = [0.02, 0.05, 0.10]
+        adds_results["thresholds"] = thresholds
 
         self.classes = sorted(self.classes)
         num_valid_class = len(self.classes)
         for i, cls_name in enumerate(self.classes):
 
-            model_diameter = self.models_info[cls_name]['diameter'] / 1000  # in meter
+            model_diameter = self.models_info[cls_name]['diameter'] # in centimeters
 
-            threshold_002[i] = 0.02 * model_diameter
-            threshold_005[i] = 0.05 * model_diameter
-            threshold_010[i] = 0.10 * model_diameter
+            # threshold_002[i] = 0.02 * model_diameter
+            # threshold_005[i] = 0.05 * model_diameter
+            # threshold_010[i] = 0.10 * model_diameter
+
+            threshold_002[i] = thresholds[0] * model_diameter
+            threshold_005[i] = thresholds[1] * model_diameter
+            threshold_010[i] = thresholds[2] * model_diameter
+
+            # print(f"Model diameter: {model_diameter}")
+            # print(f"Threshold 0.02: {threshold_002[i]}")
+            # print(f"Threshold 0.05: {threshold_005[i]}")
+            # print(f"Threshold 0.10: {threshold_010[i]}")
 
             symmetry_flag = model_symmetry[cls_name]
             cls_poses_pred = poses_pred[cls_name]
@@ -123,19 +137,23 @@ class PoseEvaluatorLMO(object):
                 if symmetry_flag:
                     eval_method = 'adi'
                     error = self.calc_adi(model_pts, pose_pred, pose_gt)
+                    # print(f"ERROR (ADD): {error}")
                 else:
                     eval_method = 'add'
+                    print(f"Predicted Pose: {pose_pred}")
+                    print(f"Ground truth Pose: {pose_gt}")
                     error = self.calc_add(model_pts, pose_pred, pose_gt)
+                    print(f"ERROR (ADD): {error}")
                 if error < threshold_002[i]:
-                    count_correct['0.02'][i] += 1
+                    count_correct[threshold_str[0]][i] += 1
                 if error < threshold_005[i]:
-                    count_correct['0.05'][i] += 1
+                    count_correct[threshold_str[1]][i] += 1
                 if error < threshold_010[i]:
-                    count_correct['0.10'][i] += 1
+                    count_correct[threshold_str[2]][i] += 1
             adds_results[cls_name] = {}
-            adds_results[cls_name]["threshold"] = {'0.02': count_correct['0.02'][i].tolist(),
-                                                   '0.05': count_correct['0.05'][i].tolist(),
-                                                   '0.10': count_correct['0.10'][i].tolist()}
+            adds_results[cls_name]["threshold"] = {threshold_str[0]: count_correct[threshold_str[0]][i].tolist(),
+                                                   threshold_str[1]: count_correct[threshold_str[1]][i].tolist(),
+                                                   threshold_str[2]: count_correct[threshold_str[2]][i].tolist()}
 
         plot_data = {}
         sum_acc_002 = np.zeros(1)
@@ -146,33 +164,38 @@ class PoseEvaluatorLMO(object):
                 continue
             plot_data[cls_name] = []
             log_file.write("** {} **".format(cls_name))
-            acc_002 = 100 * float(count_correct['0.02'][i]) / float(count_all[i])
+            acc_002 = 100 * float(count_correct[threshold_str[0]][i]) / float(count_all[i])
             sum_acc_002[0] += acc_002
-            acc_005 = 100 * float(count_correct['0.05'][i]) / float(count_all[i])
+            
+            acc_005 = 100 * float(count_correct[threshold_str[1]][i]) / float(count_all[i])
             sum_acc_005[0] += acc_005
-            acc_010 = 100 * float(count_correct['0.10'][i]) / float(count_all[i])
+            
+            acc_010 = 100 * float(count_correct[threshold_str[2]][i]) / float(count_all[i])
             sum_acc_010[0] += acc_010
-
-            log_file.write('threshold=0.02, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.02'][i],
+            
+            log_file.write('threshold={}, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
+                threshold_str[0],
+                count_correct[threshold_str[0]][i],
                 count_all[i],
                 acc_002))
             log_file.write("\n")
-            log_file.write('threshold=0.05, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.05'][i],
+            log_file.write('threshold={}, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
+                threshold_str[1],
+                count_correct[threshold_str[1]][i],
                 count_all[i],
                 acc_005))
             log_file.write("\n")
-            log_file.write('threshold=0.10, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.10'][i],
+            log_file.write('threshold={}, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
+                threshold_str[2],
+                count_correct[threshold_str[2]][i],
                 count_all[i],
                 acc_010))
             log_file.write("\n")
             log_file.write("\n")
             adds_results[cls_name]["accuracy"] = {'n_poses': count_all[i].tolist(),
-                                                  '0.02': acc_002,
-                                                  '0.05': acc_005,
-                                                  '0.10': acc_010}
+                                                  threshold_str[0]: acc_002,
+                                                  threshold_str[1]: acc_005,
+                                                  threshold_str[2]: acc_010}
 
         log_file.write("=" * 30)
         log_file.write("\n")
@@ -182,285 +205,34 @@ class PoseEvaluatorLMO(object):
             log_file.write("\n")
             log_file.write("** iter {} **".format(iter_i + 1))
             log_file.write("\n")
-            log_file.write('threshold=0.02, mean accuracy: {:.2f}'.format(
+            log_file.write('threshold={}, mean accuracy: {:.2f}'.format(
+                threshold_str[0],
                 sum_acc_002[iter_i] / num_valid_class))
             log_file.write("\n")
-            log_file.write('threshold=0.05, mean accuracy: {:.2f}'.format(
+            log_file.write('threshold={}, mean accuracy: {:.2f}'.format(
+                threshold_str[1],
                 sum_acc_005[iter_i] / num_valid_class))
             log_file.write("\n")
-            log_file.write('threshold=0.10, mean accuracy: {:.2f}'.format(
+            log_file.write('threshold={}, mean accuracy: {:.2f}'.format(
+                threshold_str[2],
                 sum_acc_010[iter_i] / num_valid_class))
             log_file.write("\n")
         log_file.write("=" * 30)
-        adds_results["accuracy"] = {'0.02': sum_acc_002[0].tolist() / num_valid_class,
-                                    '0.05': sum_acc_005[0].tolist() / num_valid_class,
-                                    '0.10': sum_acc_010[0].tolist() / num_valid_class}
+        adds_results["accuracy"] = {threshold_str[0]: sum_acc_002[0].tolist() / num_valid_class,
+                                    threshold_str[1]: sum_acc_005[0].tolist() / num_valid_class,
+                                    threshold_str[2]: sum_acc_010[0].tolist() / num_valid_class}
+        # print(f"Print accuracies: {adds_results["accuracy"]}")
 
         log_file.write("\n")
         log_file.close()
+        print(f"\nFinal ADD(-S) Accuracy Results Across {num_valid_class} Classes:")
+        print(f"Threshold {threshold_str[0]}: {adds_results['accuracy'][threshold_str[0]]:.2f}%")
+        print(f"Threshold {threshold_str[1]}: {adds_results['accuracy'][threshold_str[1]]:.2f}%")
+        print(f"Threshold {threshold_str[2]}: {adds_results['accuracy'][threshold_str[2]]:.2f}%")
         json.dump(adds_results, json_file)
         json_file.close()
         return
 
-    def evaluate_pose_adi(self, output_path):
-        """
-        Evaluate 6D pose by ADD-S metric
-
-        For metric definition we refer to http://www.stefan-hinterstoisser.com/papers/hinterstoisser2012accv.pdf
-        """
-        output_dir = output_path + "adi/"
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-        os.makedirs(output_dir)
-
-        log_file = open(output_path + "adi/adds.log", 'w')
-        json_file = open(output_path + "adi/adds.json", 'w')
-
-        poses_pred = copy.deepcopy(self.poses_pred)
-        poses_gt = copy.deepcopy(self.poses_gt)
-        models = self.models
-
-        log_file.write('\n* {} *\n {:^}\n* {} *'.format('-' * 100, 'Metric ADD-S', '-' * 100))
-        log_file.write("\n")
-
-        eval_method = 'adi'
-        n_classes = len(self.classes)
-        count_all = np.zeros((n_classes), dtype=np.float32)
-        count_correct = {k: np.zeros((n_classes), dtype=np.float32) for k in ['0.02', '0.05', '0.10']}
-
-        threshold_002 = np.zeros((n_classes), dtype=np.float32)
-        threshold_005 = np.zeros((n_classes), dtype=np.float32)
-        threshold_010 = np.zeros((n_classes), dtype=np.float32)
-
-        adi_results = {}
-        adi_results["thresholds"] = [0.02, 0.05, 0.10]
-
-        self.classes = sorted(self.classes)
-        num_valid_class = len(self.classes)
-        for i, cls_name in enumerate(self.classes):
-
-            model_diameter = self.models_info[cls_name]['diameter'] / 1000 # in m
-
-            threshold_002[i] = 0.02 * model_diameter
-            threshold_005[i] = 0.05 * model_diameter
-            threshold_010[i] = 0.10 * model_diameter
-
-            cls_poses_pred = poses_pred[cls_name]
-            cls_poses_gt = poses_gt[cls_name]
-            model_pts = models[cls_name]['pts']
-            n_poses = len(cls_poses_gt)
-            count_all[i] = n_poses
-            for j in range(n_poses):
-                pose_pred = cls_poses_pred[j]  # est pose
-                pose_gt = cls_poses_gt[j]  # gt pose
-                error = self.calc_adi(model_pts, pose_pred, pose_gt)
-                if error < threshold_002[i]:
-                    count_correct['0.02'][i] += 1
-                if error < threshold_005[i]:
-                    count_correct['0.05'][i] += 1
-                if error < threshold_010[i]:
-                    count_correct['0.10'][i] += 1
-            adi_results[cls_name] = {}
-            adi_results[cls_name]["threshold"] = {'0.02': count_correct['0.02'][i].tolist(),
-                                                   '0.05': count_correct['0.05'][i].tolist(),
-                                                   '0.10': count_correct['0.10'][i].tolist()}
-
-        plot_data = {}
-        sum_acc_002 = np.zeros(1)
-        sum_acc_005 = np.zeros(1)
-        sum_acc_010 = np.zeros(1)
-        for i, cls_name in enumerate(self.classes):
-            if count_all[i] == 0:
-                continue
-            plot_data[cls_name] = []
-            log_file.write("** {} **".format(cls_name))
-            acc_002 = 100 * float(count_correct['0.02'][i]) / float(count_all[i])
-            sum_acc_002[0] += acc_002
-            acc_005 = 100 * float(count_correct['0.05'][i]) / float(count_all[i])
-            sum_acc_005[0] += acc_005
-            acc_010 = 100 * float(count_correct['0.10'][i]) / float(count_all[i])
-            sum_acc_010[0] += acc_010
-
-            log_file.write('threshold=0.02, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.02'][i],
-                count_all[i],
-                acc_002))
-            log_file.write("\n")
-            log_file.write('threshold=0.05, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.05'][i],
-                count_all[i],
-                acc_005))
-            log_file.write("\n")
-            log_file.write('threshold=0.10, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.10'][i],
-                count_all[i],
-                acc_010))
-            log_file.write("\n")
-            log_file.write("\n")
-
-            adi_results[cls_name]["accuracy"] = {'n_poses': count_all[i].tolist(),
-                                                 '0.02': acc_002,
-                                                 '0.05': acc_005,
-                                                 '0.10': acc_010}
-
-        log_file.write("=" * 30)
-        log_file.write('\n')
-
-        for iter_i in range(1):
-            log_file.write("---------- ADD-S performance over {} classes -----------".format(num_valid_class))
-            log_file.write("\n")
-            log_file.write("** iter {} **".format(iter_i + 1))
-            log_file.write("\n")
-            log_file.write('threshold=0.02, mean accuracy: {:.2f}'.format(
-                sum_acc_002[iter_i] / num_valid_class))
-            log_file.write("\n")
-            log_file.write('threshold=0.05, mean accuracy: {:.2f}'.format(
-                sum_acc_005[iter_i] / num_valid_class))
-            log_file.write("\n")
-            log_file.write('threshold=0.10, mean accuracy: {:.2f}'.format(
-                sum_acc_010[iter_i] / num_valid_class))
-            log_file.write("\n")
-        log_file.write("=" * 30)
-        adi_results["accuracy"] = {'0.02': sum_acc_002[0].tolist() / num_valid_class,
-                                    '0.05': sum_acc_005[0].tolist() / num_valid_class,
-                                    '0.10': sum_acc_010[0].tolist() / num_valid_class}
-
-        log_file.write("\n")
-        log_file.close()
-        json.dump(adi_results, json_file)
-        json_file.close()
-        return
-
-    def evaluate_pose_add(self, output_path):
-        """
-        Evaluate 6D pose by ADD Metric
-
-        For metric definition we refer to: http://www.stefan-hinterstoisser.com/papers/hinterstoisser2012accv.pdf
-        """
-
-        output_dir = output_path + "/add/"
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-        os.makedirs(output_dir)
-
-        log_file = open(output_path + "add/add.log", 'w')
-        json_file = open(output_path + "add/add.json", 'w')
-
-        poses_pred = copy.deepcopy(self.poses_pred)
-        poses_gt = copy.deepcopy(self.poses_gt)
-        models_info = self.models_info
-        models = self.models
-
-        log_file.write('\n* {} *\n {:^}\n* {} *'.format('-' * 100, 'Metric ADD', '-' * 100))
-        log_file.write("\n")
-
-        eval_method = 'add'
-        n_classes = len(self.classes)
-        count_all = np.zeros((n_classes), dtype=np.float32)
-        count_correct = {k: np.zeros((n_classes), dtype=np.float32) for k in ['0.02', '0.05', '0.10']}
-
-        threshold_002 = np.zeros((n_classes), dtype=np.float32)
-        threshold_005 = np.zeros((n_classes), dtype=np.float32)
-        threshold_010 = np.zeros((n_classes), dtype=np.float32)
-
-        add_results = {}
-        add_results["thresholds"] = [0.02, 0.05, 0.10]
-
-        self.classes = sorted(self.classes)
-        num_valid_class = len(self.classes)
-        for i, cls_name in enumerate(self.classes):
-
-            model_diameter = self.models_info[cls_name]['diameter'] / 1000  # in Meter
-            threshold_002[i] = 0.02 * model_diameter
-            threshold_005[i] = 0.05 * model_diameter
-            threshold_010[i] = 0.10 * model_diameter
-
-            cls_poses_pred = poses_pred[cls_name]
-            cls_poses_gt = poses_gt[cls_name]
-            model_pts = models[cls_name]['pts']
-            n_poses = len(cls_poses_gt)
-            count_all[i] = n_poses
-            for j in range(n_poses):
-                pose_pred = cls_poses_pred[j]  # est pose
-                pose_gt = cls_poses_gt[j]  # gt pose
-                error = self.calc_add(model_pts, pose_pred, pose_gt)
-                if error < threshold_002[i]:
-                    count_correct['0.02'][i] += 1
-                if error < threshold_005[i]:
-                    count_correct['0.05'][i] += 1
-                if error < threshold_010[i]:
-                    count_correct['0.10'][i] += 1
-
-            add_results[cls_name] = {}
-            add_results[cls_name]["threshold"] = {'0.02': count_correct['0.02'][i].tolist(),
-                                                   '0.05': count_correct['0.05'][i].tolist(),
-                                                   '0.10': count_correct['0.10'][i].tolist()}
-
-        plot_data = {}
-        sum_acc_002 = np.zeros(1)
-        sum_acc_005 = np.zeros(1)
-        sum_acc_010 = np.zeros(1)
-        for i, cls_name in enumerate(self.classes):
-            if count_all[i] == 0:
-                continue
-            plot_data[cls_name] = []
-            log_file.write("** {} **".format(cls_name))
-            acc_002 = 100 * float(count_correct['0.02'][i]) / float(count_all[i])
-            sum_acc_002[0] += acc_002
-            acc_005 = 100 * float(count_correct['0.05'][i]) / float(count_all[i])
-            sum_acc_005[0] += acc_005
-            acc_010 = 100 * float(count_correct['0.10'][i]) / float(count_all[i])
-            sum_acc_010[0] += acc_010
-
-            log_file.write('threshold=0.02, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.02'][i],
-                count_all[i],
-                acc_002))
-            log_file.write("\n")
-            log_file.write('threshold=0.05, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.05'][i],
-                count_all[i],
-                acc_005))
-            log_file.write("\n")
-            log_file.write('threshold=0.10, correct poses: {}, all poses: {}, accuracy: {:.2f}'.format(
-                count_correct['0.10'][i],
-                count_all[i],
-                acc_010))
-            log_file.write("\n")
-            log_file.write("\n")
-            add_results[cls_name]["accuracy"] = {'n_poses': count_all[i].tolist(),
-                                                  '0.02': acc_002,
-                                                  '0.05': acc_005,
-                                                  '0.10': acc_010}
-
-        log_file.write("=" * 30)
-        log_file.write("\n")
-
-        for iter_i in range(1):
-            log_file.write("---------- ADD performance over {} classes -----------".format(num_valid_class))
-            log_file.write("\n")
-            log_file.write("** iter {} **".format(iter_i + 1))
-            log_file.write("\n")
-            log_file.write('threshold=0.02, mean accuracy: {:.2f}'.format(
-                sum_acc_002[iter_i] / num_valid_class))
-            log_file.write("\n")
-            log_file.write('threshold=0.05, mean accuracy: {:.2f}'.format(
-                sum_acc_005[iter_i] / num_valid_class))
-            log_file.write("\n")
-            log_file.write('threshold=0.10, mean accuracy: {:.2f}'.format(
-                sum_acc_010[iter_i] / num_valid_class))
-            log_file.write("\n")
-        log_file.write("=" * 30)
-
-        add_results["accuracy"] = {'0.02': sum_acc_002[0].tolist() / num_valid_class,
-                                    '0.05': sum_acc_005[0].tolist() / num_valid_class,
-                                    '0.10': sum_acc_010[0].tolist() / num_valid_class}
-
-        log_file.write("\n")
-        log_file.close()
-        json.dump(add_results, json_file)
-        json_file.close()
-        return
 
     def calculate_class_avg_translation_error(self, output_path):
         """

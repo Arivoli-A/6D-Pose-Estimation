@@ -91,94 +91,60 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-
 @torch.no_grad()
-def pose_evaluate(model, matcher, pose_evaluator, data_loader, image_set, bbox_mode, rotation_mode, device, output_dir, epoch=None):
-    """
-    Evaluate PoET on the whole dataset, calculate the evaluation metrics and store the final performance.
-    """
-    model.eval()
-    matcher.eval()
+def pose_evaluate(model, matcher, pose_evaluator, data_loader, eval_set, bbox_mode, rotation_representation, device, output_dir, epoch):
+    print("Process validation dataset:")
 
-    # Reset pose evaluator to be empty
+    model.eval()
     pose_evaluator.reset()
 
-    # Check whether the evaluation folder exists, otherwise create it
-    if epoch is not None:
-        output_eval_dir = output_dir + "/eval_" + image_set + "_" + bbox_mode + "_" + str(epoch) + "/"
-    else:
-        output_eval_dir = output_dir + "/eval_" + image_set + "_" + bbox_mode + "/"
-    Path(output_eval_dir).mkdir(parents=True, exist_ok=True)
+    for batch in data_loader:
+        samples, targets = batch  # samples: list of dicts, targets: list of dicts
 
-    print("Process validation dataset:")
-    n_images = len(data_loader.dataset.ids)
-    bs = data_loader.batch_size
-    start_time = time.time()
-    processed_images = 0
-    for samples, targets in data_loader:
-        batch_start_time = time.time()
-        samples = samples.to(device)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        # Move samples to device
+        for s in samples:
+            s['features'] = [f.to(device) for f in s['features']]
+            s['prediction'] = s['prediction'].to(device)
+            s['img_mask'] = s['img_mask'].to(device)
+
+        for t in targets:
+            for k in t:
+                if isinstance(t[k], torch.Tensor):
+                    t[k] = t[k].to(device)
+
+        # Forward pass
         outputs, n_boxes_per_sample = model(samples, targets)
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs' and k != 'enc_outputs'}
 
-        # Extract final predictions and store them
+        # Remove aux outputs if present
+        outputs_without_aux = {k: v for k, v in outputs.items() if k not in ['aux_outputs', 'enc_outputs']}
+
+        # Matching
         indices = matcher(outputs_without_aux, targets, n_boxes_per_sample)
         idx = get_src_permutation_idx(indices)
 
         pred_translations = outputs_without_aux["pred_translation"][idx].detach().cpu().numpy()
+        # print(f"Predict translations: {pred_translations}")
         pred_rotations = outputs_without_aux["pred_rotation"][idx].detach().cpu().numpy()
+        # print(f"Predict translations: {pred_translations}")
 
         tgt_translations = torch.cat([t['relative_position'][i] for t, (_, i) in zip(targets, indices)], dim=0).detach().cpu().numpy()
+        # print(f"Target translations: {tgt_translations}")
         tgt_rotations = torch.cat([t['relative_rotation'][i] for t, (_, i) in zip(targets, indices)], dim=0).detach().cpu().numpy()
 
         obj_classes_idx = torch.cat([t['labels'][i] for t, (_, i) in zip(targets, indices)], dim=0).detach().cpu().numpy()
-        intrinsics = torch.cat([t['intrinsics'][i] for t, (_, i) in zip(targets, indices)], dim=0).detach().cpu().numpy()
-        img_files = [data_loader.dataset.coco.loadImgs(t["image_id"].item())[0]['file_name'] for t, (_, i) in zip(targets, indices) for _ in range(0, len(i))]
+        # img_files = [t["image_path"] for t, (_, i) in zip(targets, indices) for _ in range(len(i))]
 
-        # Iterate over all predicted objects and save them in the pose evaluator
-        for cls_idx, img_file, intrinsic, pred_translation, pred_rotation, tgt_translation, tgt_rotation in \
-                zip(obj_classes_idx, img_files, intrinsics, pred_translations, pred_rotations, tgt_translations, tgt_rotations):
+        for cls_idx, pred_T, pred_R, tgt_T, tgt_R in zip(
+                obj_classes_idx, pred_translations, pred_rotations, tgt_translations, tgt_rotations):
             cls = pose_evaluator.classes[cls_idx - 1]
-            pose_evaluator.poses_pred[cls].append(
-                np.concatenate((pred_rotation, pred_translation.reshape(3, 1)), axis=1))
-            pose_evaluator.poses_gt[cls].append(
-                np.concatenate((tgt_rotation, tgt_translation.reshape(3, 1)), axis=1))
-            pose_evaluator.poses_img[cls].append(img_file)
+            pose_evaluator.poses_pred[cls].append(np.concatenate((pred_R, pred_T.reshape(3, 1)), axis=1))
+            pose_evaluator.poses_gt[cls].append(np.concatenate((tgt_R, tgt_T.reshape(3, 1)), axis=1))
             pose_evaluator.num[cls] += 1
-            pose_evaluator.camera_intrinsics[cls].append(intrinsic)
+            pose_evaluator.camera_intrinsics[cls].append(None)
 
-        batch_total_time = time.time() - batch_start_time
-        batch_total_time_str = str(datetime.timedelta(seconds=int(batch_total_time)))
-        processed_images = processed_images + len(targets)
-        remaining_images = n_images - processed_images
-        remaining_batches = remaining_images / bs
-        eta = batch_total_time * remaining_batches
-        eta_str = str(datetime.timedelta(seconds=int(eta)))
-        print("Processed {}/{} \t Batch Time: {} \t ETA: {}".format(processed_images, n_images, batch_total_time_str, eta_str))
-    # At this point iterated over all validation images and for each object the result is fed into the pose evaluator
-    total_time = time.time() - start_time
-    time_per_img = total_time / n_images
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    time_per_img_str = str(datetime.timedelta(seconds=int(time_per_img)))
-    print("Network Processing Time\nTotal Time: {}\t\tImages: {}\t\ts/img: {}".format(total_time_str, n_images, time_per_img_str))
-    print("Start results evaluation")
-    start_time = time.time()
-    print("Start Calculating ADD")
-    pose_evaluator.evaluate_pose_add(output_eval_dir)
-    print("Start Calculating ADD-S")
-    pose_evaluator.evaluate_pose_adi(output_eval_dir)
-    print("Start Calculating ADD(-S)")
-    pose_evaluator.evaluate_pose_adds(output_eval_dir)
-    print("Start Calculating Average Translation Error")
-    pose_evaluator.calculate_class_avg_translation_error(output_eval_dir)
-    print("Start Calculating Average Rotation Error")
-    pose_evaluator.calculate_class_avg_rotation_error(output_eval_dir)
-    total_time = time.time() - start_time
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print("Evaluation time: {}".format(total_time_str))
-    return
-
+    os.makedirs(os.path.join(output_dir, "add"), exist_ok=True)
+    ### used ADDs metric for different thresholds (0.2, 0.4, 0.6) instead (0.02, 0.04, 0.06) ###
+    pose_evaluator.evaluate_pose_adds(output_dir)
 
 @torch.no_grad()
 def bop_evaluate(model, matcher, data_loader, image_set, bbox_mode, rotation_mode, device, output_dir):
@@ -193,12 +159,16 @@ def bop_evaluate(model, matcher, data_loader, image_set, bbox_mode, rotation_mod
 
     out_csv_file = open(output_eval_dir + 'ycbv.csv', 'w')
     out_csv_file.write("scene_id,im_id,obj_id,score,R,t,time")
-    n_images = len(data_loader.dataset.ids)
+    # n_images = len(data_loader.dataset.ids)
+    n_images = len(data_loader.dataset)
+
 
     # CSV format: scene_id, im_id, obj_id, score, R, t, time
     counter = 1
     for samples, targets in data_loader:
-        samples = samples.to(device)
+        # samples = samples.to(device)
+        samples = torch.stack(samples).to(device)
+
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         pred_start_time = time.time()
         outputs, n_boxes_per_sample = model(samples, targets)

@@ -461,10 +461,13 @@ class SetCriterion(nn.Module):
         src_translation = outputs["pred_translation"][idx]
         tgt_translation = torch.cat([t['relative_position'][i] for t, (_, i) in zip(targets, indices)], dim=0)
         n_obj = len(tgt_translation)
+        print(f"Source Translation: {src_translation}")
+        print(f"Target Translation: {tgt_translation}")
         
         loss_translation = F.mse_loss(src_translation, tgt_translation, reduction='none')
         loss_translation = torch.sum(loss_translation, dim=1)
         loss_translation = torch.sqrt(loss_translation)
+        print(f"Loss translation: {loss_translation}")
         losses = {}
         losses["loss_trans"] = loss_translation.sum() / n_obj
         return losses

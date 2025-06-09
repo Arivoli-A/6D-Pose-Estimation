@@ -217,7 +217,7 @@ def load_obj(path):
     mesh = trimesh.load(path)
     model = {}
     model['pts'] = np.array(mesh.vertices)
-    if mesh.has_face_normals:
+    if hasattr(mesh, 'face_normals') and mesh.face_normals is not None:
         model['normals'] = np.array(mesh.face_normals)
     if mesh.faces is not None:
         model['faces'] = np.array(mesh.faces)

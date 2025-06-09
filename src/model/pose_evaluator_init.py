@@ -6,10 +6,9 @@
 
 import numpy as np
 import json
-import evaluation_tools.model_tools as model_tools
-from evaluation_tools.pose_evaluator import PoseEvaluator
-from evaluation_tools.pose_evaluator_lmo import PoseEvaluatorLMO
-import os # Add this import for path manipulation and listing directories
+import src.model.model_tools as model_tools
+from src.model.pose_evaluator_lmo import PoseEvaluatorLMO
+import os
 
 
 # Functions to initialize the PoseEvaluator module
@@ -22,17 +21,27 @@ def load_classes(path):
     """
     return {}
 
-
 def load_model_info(points):
     """
-    Computes information about the 3D model, specifically its diameter.
+    Computes bounding box-based diameter of a 3D model from its point cloud.
     This is used because HOPE does not provide a pre-computed models_info.json.
     """
     infos = {}
-    extents = 2 * np.max(np.absolute(points), axis=0)
-    infos['diameter'] = np.sqrt(np.sum(extents * extents))
-    infos['min_x'], infos['min_y'], infos['min_z'] = np.min(points, axis=0)
-    infos['max_x'], infos['max_y'], infos['max_z'] = np.max(points, axis=0) # Corrected typo: should be max not min
+    
+    # Get min and max coordinates for the bounding box
+    min_coords = np.min(points, axis=0)
+    max_coords = np.max(points, axis=0)
+    print(f"Min coords and max coords: {min_coords}, {max_coords}")
+
+    # Compute bounding box diameter (Euclidean distance between corners)
+    diameter = np.linalg.norm(max_coords - min_coords)
+    infos['diameter'] = diameter
+    print(f"INFOS DIAMETER: {infos['diameter']}")
+
+    # Store bounding box coordinates
+    infos['min_x'], infos['min_y'], infos['min_z'] = min_coords
+    infos['max_x'], infos['max_y'], infos['max_z'] = max_coords
+
     return infos
 
 
@@ -67,7 +76,8 @@ def load_models(path, classes_dict):
             model_data = model_tools.load_obj(model_path)
             
             # HOPE models are in centimeters, convert to meters for consistency in evaluation
-            model_data['pts'] = model_data['pts'] / 100.0 # Convert cm to meters
+            # model_data['pts'] = model_data['pts'] / 100.0 # Convert cm to meters
+            ## not used - points kept in cm itself ##
             
             models[class_name] = model_data
             
