@@ -82,6 +82,6 @@ class SceneDataset(Dataset):
         sample_output = {'features': features, 'prediction': pred_objects, 'img_mask' : img_mask}
 
         target['labels'] = sample['labels']
-        target['boxes'] = sample['gt_boxes'] # Must be replaced with ground truth boxes
+        target['boxes'] = sample['boxes'] # Must be replaced with ground truth boxes : sample['gt_boxes']
 
         return sample_output, target
