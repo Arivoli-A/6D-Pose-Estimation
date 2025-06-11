@@ -358,7 +358,7 @@ class PoseEstimation(nn.Module):
                 
                 # Select the correct output according to the predicted class in the class-specific mode
                 output_pose = output_pose.view(bs * self.n_queries, self.n_classes, -1)
-                output_pose = torch.cat([query[output_idx[i], :] for i, query in enumerate(output_rotation)]).view(
+                output_pose = torch.cat([query[output_idx[i], :] for i, query in enumerate(output_pose)]).view(
                     bs, self.n_queries, -1)
                 output_pose = self.process_pose(output_pose)
                 
