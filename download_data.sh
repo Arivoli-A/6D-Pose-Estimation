@@ -40,8 +40,8 @@ echo "[INFO] Downloading file from Google Drive..."
 gdown --output "${DEFAULT_BASE_FOLDER_NAME}/" "$DOWNLOAD_URL"
 
 # Unzip the downloaded file
-echo "[INFO] Unzipping file to $OUTPUT_FOLDER"
-unzip -o "${DEFAULT_BASE_FOLDER_NAME}/valid_npz_outputs_split.zip" -d "$OUTPUT_FOLDER"  
+#echo "[INFO] Unzipping file to $OUTPUT_FOLDER"
+#unzip -o "${DEFAULT_BASE_FOLDER_NAME}/valid_npz_outputs_split.zip" -d "$OUTPUT_FOLDER"  
 
 rm -rf $DEFAULT_BASE_FOLDER_NAME
 
