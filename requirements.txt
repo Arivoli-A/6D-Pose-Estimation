@@ -1,2 +1,4 @@
 gdown
 packaging
+imageio
+trimesh
