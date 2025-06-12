@@ -12,11 +12,11 @@ After activating the environment to set the shared libraries in the path, run th
 ```bash
 . lib_path_set.sh
 ```
-Finally to copy the MSDeformAttn class from the build folder, run the following command:
+//Finally to copy the MSDeformAttn class from the build folder, run the following command:
 
-```bash
-. deform_attn_file.sh
-```
+//```bash
+//. deform_attn_file.sh
+//```
 To download the pre computed backbone data, run the following command:
 
 ```bash
