@@ -1,4 +1,5 @@
 # 6D Pose Estimation from RGB Images
+This project is a reconstruction of the original PoET architecture (https://github.com/aau-cns/poet), modified to incorporate an asynchronous object detection backbone and a transformer-based encoder-decoder architecture. The pose estimation pipeline runs on a single NVIDIA A5000 GPU.
 
 ## Setting up environment and run the model
 
